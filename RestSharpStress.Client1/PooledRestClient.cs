@@ -14,7 +14,7 @@ namespace RestSharpStress.Client1;
 /// </summary>
 public class PooledRestClient: RestClient
 {
-	private static readonly HttpMessageHandlerPool Pool = new(1024);
+	private static readonly HttpMessageHandlerPool Pool = new(TimeSpan.FromMinutes(15), 1024);
 
 	private HttpMessageHandler? _handler;
 
@@ -48,16 +48,19 @@ public class PooledRestClient: RestClient
 /// configured separately (and have slightly less typing in the main class).
 /// </summary>
 /// <param name="maximumRetained">Maximum number of handlers to keep in the pool.</param>
-internal class HttpMessageHandlerPool(int maximumRetained):
-	DefaultObjectPool<HttpMessageHandler>(new HttpMessageHandlerPoolPolicy(), maximumRetained);
+internal class HttpMessageHandlerPool(TimeSpan maximumAge, int maximumRetained):
+	DefaultObjectPool<HttpMessageHandler>(
+		new HttpMessageHandlerPoolPolicy(maximumAge),
+		maximumRetained);
 
 internal class HttpMessageHandlerPoolPolicy:
 	IPooledObjectPolicy<HttpMessageHandler>
 {
 	private static long _created;
+	private readonly TimeSpan _maximumAge;
 
-	// maximum age we keep the handler (with caveats, but roughly true)
-	private static readonly TimeSpan MaximumAge = TimeSpan.FromMinutes(15);
+	public HttpMessageHandlerPoolPolicy(TimeSpan maximumAge) =>
+		_maximumAge = maximumAge;
 
 	/// <summary>Tracking number of handlers created, for debugging purposes only.</summary>
 	public static long Created => Interlocked.Read(ref _created);
@@ -70,7 +73,7 @@ internal class HttpMessageHandlerPoolPolicy:
 
 	public bool Return(HttpMessageHandler handler) =>
 		handler is not TimestampedHttpMessageHandler timestamped ||
-		timestamped.Age <= MaximumAge;
+		timestamped.Age <= _maximumAge;
 }
 
 public class TimestampedHttpMessageHandler(HttpMessageHandler handler):
